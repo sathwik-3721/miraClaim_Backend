@@ -121,10 +121,25 @@ async function analyzeText(fileContent) {
     }
 }
 
+// Function to format date in "Month Day, Year" format
+function formatDate(dateStr) {
+    const [year, month, day] = dateStr.split(':');
+    const date = new Date(`${year}-${month}-${day}`);
+    const options = { year: 'numeric', month: 'long', day: 'numeric' };
+    return date.toLocaleDateString('en-US', options);
+}
 
-let itemCovered = null; 
+// function to check if it is below one month or not
+function isValidClaimDate(metaDataDate, claimDate1) {
+    const oneMonthAgoDate = new Date(claimDate1);
+    oneMonthAgoDate.setMonth(oneMonthAgoDate.getMonth() - 1);
+    return metaDataDate < oneMonthAgoDate;
+}
 
 // POST route for extracting PDF and analyzing claim info
+let itemCovered = null;
+let claimDate = null;
+
 app.post("/extract-pdf", upload.single('pdf'), async (req, res) => {
     try {
         if (!req.file) {
@@ -151,9 +166,11 @@ app.post("/extract-pdf", upload.single('pdf'), async (req, res) => {
         const claimInfo = await analyzeText(data);
         console.log("Claim Info:", claimInfo);
 
-        // Store the itemCovered in a variable
+        // Store the itemCovered and claimDate in variables
         itemCovered = claimInfo["Items Covered"];
-        console.log("item covered", itemCovered);
+        claimDate = claimInfo["Claim Date"];
+        console.log("Item Covered:", itemCovered);
+        console.log("Claim Date:", claimDate);
 
         // Respond with both the extracted PDF data and the analyzed claim info
         return res.json({
@@ -165,12 +182,14 @@ app.post("/extract-pdf", upload.single('pdf'), async (req, res) => {
     }
 });
 
+
 // POST route for reading EXIF data from an uploaded image file
-app.post('/metadata', upload.single('image'), (req, res) => {
+app.post('/verify-metadata', upload.single('image'), (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).send('No file uploaded.');
         }
+        console.log("vjhhb", itemCovered);
 
         // Read the image file from the uploaded buffer
         const buffer = req.file.buffer;
@@ -178,8 +197,20 @@ app.post('/metadata', upload.single('image'), (req, res) => {
         // Parse EXIF data from the image buffer using exifreader
         const tags = ExifReader.load(buffer);
 
-        // Send the extracted EXIF data as a JSON response
-        res.json(tags);
+        // Extract and format the DateTime
+        const dateTimeExif = tags['DateTime']?.description;
+        const formattedDate = formatDate(dateTimeExif.split(' ')[0]);
+        console.log('Date', formattedDate);
+        console.log('Claim date', claimDate);
+
+        const claimDateStr = new Date(claimDate);
+        const formattedDateStr = new Date(formatDate);
+
+        if (isValidClaimDate(formattedDateStr, claimDateStr)) {
+            return res.status(400).json({error: 'Date is not valid'});
+        } else {
+            return res.status(200).json({message: 'Valid Date', tags: tags})
+        }
     } catch (error) {
         console.error('Error reading EXIF data:', error.message);
         res.status(500).send('Error processing image.');
