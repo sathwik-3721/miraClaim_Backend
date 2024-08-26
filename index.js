@@ -23,7 +23,6 @@ const apiKey = process.env.GEMINI_API_KEY;
 // Initialize GoogleGenerativeAI with your API key
 const genAI = new GoogleGenerativeAI(apiKey);
 const pdfExtract = new PDFExtract();
-const options = {};
 
 // In-memory store for extracted PDF data
 let extractedPdfText = '';
@@ -187,43 +186,37 @@ app.post("/extract-pdf", upload.single('pdf'), async (req, res) => {
     }
 });
 
-
 // POST route for reading EXIF data from an uploaded image file
-app.post('/verify-metadata', upload.single('image'), (req, res) => {
+app.post('/verify-metadata', upload.array('images', 10), (req, res) => {
     try {
-        if (!req.file) {
-            return res.status(400).send('No file uploaded.');
+        if (!req.files || req.files.length === 0) {
+            return res.status(400).send('No files uploaded.');
         }
-        console.log("vjhhb", itemCovered);
 
-        // Read the image file from the uploaded buffer
-        const buffer = req.file.buffer;
-        console.log(buffer)
-
-        // Parse EXIF data from the image buffer using exifreader
+        // Process only the first uploaded file
+        const file = req.files[0];
+        const buffer = file.buffer;
         const tags = ExifReader.load(buffer);
 
         // Extract and format the DateTime
         const dateTimeExif = tags['DateTime']?.description;
         const formattedDate = formatDate(dateTimeExif.split(' ')[0]);
-        console.log('Date', formattedDate);
-        console.log('Claim date', claimDate);
 
-        const claimDateStr = new Date(claimDate);
-        const formattedDateStr = new Date(formatDate);
+        const claimDateStr = new Date(claimDate); // Ensure claimDate is defined and properly set
+        const formattedDateStr = new Date(formattedDate);
 
         if (isValidClaimDate(formattedDateStr, claimDateStr)) {
-            return res.status(200).json({message: 'Date is not valid'});
+            return res.status(200).json({ message: 'Date is not valid', tags });
         } else {
-            return res.status(200).json({message: 'Valid Date', tags: tags})
+            return res.status(200).json({ message: 'Valid Date', tags });
         }
     } catch (error) {
         console.error('Error reading EXIF data:', error.message);
-        return res.status(200).send({message: 'Error processing image.'});
+        return res.status(500).send({ message: 'Error processing image.' });
     }
 });
 
-// POST route for processing an image from req.body and analyzing it
+
 // Function to process and analyze the image
 app.post('/analyze-image', upload.single('image'), async (req, res) => {
     try {
@@ -246,7 +239,7 @@ app.post('/analyze-image', upload.single('image'), async (req, res) => {
                         }
                     },
                     {
-                        "text": "Explain this"
+                        "text": "Analyze the Image and tell me what object does the image contains. You must return in form of - object identified"
                     }
                 ]
             }
