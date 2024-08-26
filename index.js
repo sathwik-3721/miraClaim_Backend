@@ -169,11 +169,15 @@ app.post("/extract-pdf", upload.single('pdf'), async (req, res) => {
     }
 });
 
-// Route for reading EXIF data from an image file
-app.get('/metadata', (req, res) => {
+// POST route for reading EXIF data from an uploaded image file
+app.post('/metadata', upload.single('image'), (req, res) => {
     try {
-        // Read the image file as a Buffer
-        const buffer = fs.readFileSync('demoImg.jpg');
+        if (!req.file) {
+            return res.status(400).send('No file uploaded.');
+        }
+
+        // Read the image file from the uploaded buffer
+        const buffer = req.file.buffer;
 
         // Parse EXIF data from the image buffer using exifreader
         const tags = ExifReader.load(buffer);
