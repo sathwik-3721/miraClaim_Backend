@@ -1,7 +1,7 @@
 const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
-const fs = require('fs');
+const axios = require('axios');
 const multer = require('multer');
 const ExifReader = require('exifreader');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
@@ -136,6 +136,11 @@ function isValidClaimDate(metaDataDate, claimDate1) {
     return metaDataDate < oneMonthAgoDate;
 }
 
+// Function to convert image buffer to Base64 string
+function imageToBase64(buffer) {
+    return buffer.toString('base64');
+  }
+
 // POST route for extracting PDF and analyzing claim info
 let itemCovered = null;
 let claimDate = null;
@@ -193,6 +198,7 @@ app.post('/verify-metadata', upload.single('image'), (req, res) => {
 
         // Read the image file from the uploaded buffer
         const buffer = req.file.buffer;
+        console.log(buffer)
 
         // Parse EXIF data from the image buffer using exifreader
         const tags = ExifReader.load(buffer);
@@ -207,13 +213,67 @@ app.post('/verify-metadata', upload.single('image'), (req, res) => {
         const formattedDateStr = new Date(formatDate);
 
         if (isValidClaimDate(formattedDateStr, claimDateStr)) {
-            return res.status(400).json({error: 'Date is not valid'});
+            return res.status(200).json({message: 'Date is not valid'});
         } else {
             return res.status(200).json({message: 'Valid Date', tags: tags})
         }
     } catch (error) {
         console.error('Error reading EXIF data:', error.message);
-        res.status(500).send('Error processing image.');
+        return res.status(200).send({message: 'Error processing image.'});
+    }
+});
+
+// POST route for processing an image from req.body and analyzing it
+// Function to process and analyze the image
+app.post('/analyze-image', upload.single('image'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).send('No file uploaded.');
+        }
+
+        const imageBuffer = req.file.buffer;
+        console.log("img buff", imageBuffer)
+
+        // Prepare the request payload
+        const data = JSON.stringify({
+            "contents": {
+                "role": "user",
+                "parts": [
+                    {
+                        "inlineData": {
+                            "mimeType": req.file.mimetype,
+                            "data": imageToBase64(imageBuffer)
+                        }
+                    },
+                    {
+                        "text": "Explain this"
+                    }
+                ]
+            }
+        });
+
+        const config = {
+            method: 'post',
+            maxBodyLength: Infinity,
+            url: process.env.MIRA_AI_URL,
+            headers: {
+                'model': process.env.MIRA_AI_MODEL,
+                'access-key': process.env.MIRA_AI_ACCESS_KEY,
+                'Content-Type': 'application/json'
+            },
+            data: data
+        };
+
+        // Make a request to the external API
+        const response = await axios.request(config);
+        console.log("API Response:", response.data);
+
+        // Send the response back to the client
+        return res.json(response.data);
+
+    } catch (error) {
+        console.error('Error processing image:', error.message);
+        return res.status(500).send('Error processing image.');
     }
 });
 
