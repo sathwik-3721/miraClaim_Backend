@@ -4,7 +4,6 @@ const cors = require('cors');
 const axios = require('axios');
 const multer = require('multer');
 const ExifReader = require('exifreader');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { PDFExtract } = require('pdf.js-extract');
 
 dotenv.config();
@@ -18,10 +17,6 @@ app.use(cors());
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-const apiKey = process.env.GEMINI_API_KEY; 
-
-// Initialize GoogleGenerativeAI with your API key
-const genAI = new GoogleGenerativeAI(apiKey);
 const pdfExtract = new PDFExtract();
 
 // In-memory store for extracted PDF data
@@ -220,6 +215,7 @@ app.post("/extract-pdf", upload.single('pdf'), async (req, res) => {
     }
 });
 
+let imageBuffer = null;
 // POST route for reading EXIF data from an uploaded image file
 app.post('/verify-metadata', upload.array('images', 10), (req, res) => {
     try {
@@ -229,8 +225,11 @@ app.post('/verify-metadata', upload.array('images', 10), (req, res) => {
 
         // Process only the first uploaded file
         const file = req.files[0];
-        const buffer = file.buffer;
-        const tags = ExifReader.load(buffer);
+        imageBuffer = file.buffer;
+        const fileBuffer = file.buffer;
+        const tags = ExifReader.load(fileBuffer);
+        console.log("Buffer Data", fileBuffer)
+        console.log("tags", tags)
 
         // Extract and format the DateTime
         const dateTimeExif = tags['DateTime']?.description;
@@ -252,14 +251,10 @@ app.post('/verify-metadata', upload.array('images', 10), (req, res) => {
 
 
 // Function to process and analyze the image
-app.post('/analyze-image', upload.single('image'), async (req, res) => {
+app.get('/analyze-image', async (req, res) => {
     try {
-        if (!req.file) {
-            return res.status(400).send('No file uploaded.');
-        }
-
-        const imageBuffer = req.file.buffer;
         console.log("img buff", imageBuffer)
+        const mimeType = 'image/jpeg'; // Example MIME type
 
         // Prepare the request payload
         const data = JSON.stringify({
@@ -268,12 +263,18 @@ app.post('/analyze-image', upload.single('image'), async (req, res) => {
                 "parts": [
                     {
                         "inlineData": {
-                            "mimeType": req.file.mimetype,
-                            "data": imageToBase64(imageBuffer)
+                            "mimeType": mimeType,
+                            "data": imageBuffer.toString('base64')
                         }
                     },
                     {
-                        "text": "Analyze the Image and tell me what object does the image contains. You must return in form of - object name"
+                        "text": `Analyze the Image and tell me what object does the image contains. 
+                        And I'll also give you an object name and give me the result that if both the given image and the object name given to you matches or not
+                        The Output must be
+                        - Given Image -
+                        - Analyzed Image -
+                        - Matching percentage -. 
+                        The object name is ${itemCovered}`
                     }
                 ]
             }
@@ -296,7 +297,7 @@ app.post('/analyze-image', upload.single('image'), async (req, res) => {
         console.log("API Response:", response.data);
 
         // Send the response back to the client
-        return res.json(response.data);
+        return res.json({message: response.data.message.content});
 
     } catch (error) {
         console.error('Error processing image:', error.message);
