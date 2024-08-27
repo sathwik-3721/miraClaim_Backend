@@ -241,7 +241,7 @@ app.post('/verify-metadata', upload.array('images', 10), (req, res) => {
         const claimDateStr = new Date(claimDate); // Ensure claimDate is defined and properly set
         const formattedDateStr = new Date(formattedDate);
 
-        if (!isValidClaimDate(formattedDateStr, claimDateStr)) {
+        if (isValidClaimDate(formattedDateStr, claimDateStr)) {
             return res.status(200).json({ message: 'Please upload images that are taken recently', tags });
         } else {
             return res.status(200).json({ message: 'Valid Date', tags });
@@ -335,7 +335,7 @@ app.get('/analyze-image', async (req, res) => {
 
                 const result = {
                     "Object Name": parsedJson["Object Name"] || "N/A",
-                    "Analyzed Image": (parsedJson[" Analyzed Image"] || "").trim(), // Trim to remove any extra spaces
+                    "Analyzed Image": (parsedJson[" Analyzed Image"] || ""), // Trim to remove any extra spaces
                     "Matching percentage": (parseInt(parsedJson["Matching percentage"].replace('%', "")) || "").trim(), // Trim to remove any extra spaces
                     "Claim Status": claimStatus
                 };
