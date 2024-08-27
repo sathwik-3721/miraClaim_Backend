@@ -235,11 +235,14 @@ app.post('/verify-metadata', upload.array('images', 10), (req, res) => {
         const dateTimeExif = tags['DateTime']?.description;
         const formattedDate = formatDate(dateTimeExif.split(' ')[0]);
 
+        console.log("claim date", claimDate);
+        console.log("image date", formattedDate)
+
         const claimDateStr = new Date(claimDate); // Ensure claimDate is defined and properly set
         const formattedDateStr = new Date(formattedDate);
 
-        if (isValidClaimDate(formattedDateStr, claimDateStr)) {
-            return res.status(200).json({ message: 'Date is not valid', tags });
+        if (!isValidClaimDate(formattedDateStr, claimDateStr)) {
+            return res.status(200).json({ message: 'Please upload images that are taken recently', tags });
         } else {
             return res.status(200).json({ message: 'Valid Date', tags });
         }
@@ -270,8 +273,8 @@ app.get('/analyze-image', async (req, res) => {
                     {
                         "text": `Analyze the Image and tell me what object does the image contains. 
                         And I'll also give you an object name and give me the result that if both the given image and the object name given to you matches or not
-                        The Output must be
-                        - Given Image -
+                        The Output must be in JSON format of below
+                        - Object Name -
                         - Analyzed Image -
                         - Matching percentage -. 
                         The object name is ${itemCovered}`
@@ -296,9 +299,59 @@ app.get('/analyze-image', async (req, res) => {
         const response = await axios.request(config);
         console.log("API Response:", response.data);
 
-        // Send the response back to the client
-        return res.json({message: response.data.message.content});
+        // Extract the raw content from the response
+        const rawContent = response.data.message.content;
+        // Extract JSON from Markdown code block
+        const jsonContentMatch = rawContent.match(/``` json\n([\s\S]*?)\n```/);
+        console.log("josnio", jsonContentMatch);
 
+         if (jsonContentMatch) {
+            const jsonContent = jsonContentMatch[1].trim();
+            console.log("Extracted JSON Content:", jsonContent);
+
+            try {
+                // Parse the JSON content
+                const parsedJson = JSON.parse(jsonContent);
+                // Construct the result object
+                const matnum = parsedJson["Matching percentage"];
+                const percentNum = parseInt(matnum.replace('%', ""));
+                const matchingPercentage = percentNum; // Convert to number for comparison
+
+                console.log("match %", matchingPercentage)
+
+                let claimStatus;
+                if (matchingPercentage < 80) {
+                    claimStatus = {
+                        status: "Claim Rejected",
+                        reason: "The matching percentage is below the acceptable threshold."
+                    };
+                } else {
+                    claimStatus = {
+                        status: "Claim Authorized"
+                    };
+                }
+
+                console.log("claim status", claimStatus);
+
+                const result = {
+                    "Object Name": parsedJson["Object Name"] || "N/A",
+                    "Analyzed Image": (parsedJson[" Analyzed Image"] || "").trim(), // Trim to remove any extra spaces
+                    "Matching percentage": (parseInt(parsedJson["Matching percentage"].replace('%', "")) || "").trim(), // Trim to remove any extra spaces
+                    "Claim Status": claimStatus
+                };
+
+                console.log("result", result);
+
+                // Send the result back to the client
+                return res.json(result);
+
+            } catch (error) {
+                console.error('Error parsing JSON content:', error.message);
+                return res.status(500).send('Error parsing JSON content.');
+            }
+        } else {
+            return res.status(500).send('No JSON content found in response.');
+        }
     } catch (error) {
         console.error('Error processing image:', error.message);
         return res.status(500).send('Error processing image.');
