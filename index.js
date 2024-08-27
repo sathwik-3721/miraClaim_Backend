@@ -45,10 +45,10 @@ async function analyzeText(fileContent) {
         console.log("str");
     }
 
-    console.log("File Content (Stringified):", fileText);
+    // console.log("File Content (Stringified):", fileText);
 
     // Initialize the model
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    // const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
     // Define prompts with only the required fields
     const claimantPrompt = `Analyze the following text and extract the following information in JSON format:
@@ -87,25 +87,59 @@ async function analyzeText(fileContent) {
     // Function to analyze content with a specific prompt
     async function analyzeWithPrompt(prompt) {
         try {
-            const result = await model.generateContent(prompt);
-            console.log("Result:", result);
-
-            // Retrieve the response text
-            const responseText = await result.response.text();
-            console.log("Raw Response Text:", responseText);
-
-            // Remove Markdown formatting (```json\n and \n```)
-            const cleanedText = responseText.replace(/^```json\n/, '').replace(/\n```$/, '');
-
-            console.log("Cleaned Response Text:", cleanedText);
-
-            // Parse the cleaned response text as JSON
-            return JSON.parse(cleanedText);
+            const data = JSON.stringify({
+                "contents": {
+                    "role": "user",
+                    "parts": [
+                        {
+                            "text": prompt
+                        }
+                    ]
+                }
+            });
+    
+            const config = {
+                method: 'post',
+                maxBodyLength: Infinity,
+                url: process.env.MIRA_AI_URL,
+                headers: {
+                    'model': process.env.MIRA_AI_MODEL,
+                    'access-key': process.env.MIRA_AI_ACCESS_KEY,
+                    'Content-Type': 'application/json'
+                },
+                data: data
+            };
+    
+            const result = await axios.request(config);
+    
+            // The response is likely structured as result.data.message.content
+            const responseContent = result.data.message.content;
+            console.log("Raw Response Content:", responseContent);
+    
+            // Remove Markdown formatting if present and parse JSON
+            let cleanedText = responseContent.replace(/^``` json\n/, '').replace(/\n```$/, '');
+            
+            // Additional debugging: Log the cleanedText before parsing
+            console.log("Cleaned Response Text Before Parsing:", cleanedText);
+    
+            // Try parsing the cleaned response text as JSON
+            try {
+                return JSON.parse(cleanedText);
+            } catch (jsonError) {
+                console.error("JSON Parsing Error:", jsonError.message);
+                console.log("Attempting to further clean the text...");
+                
+                // Additional cleaning attempts (e.g., remove backticks)
+                cleanedText = cleanedText.replace(/`/g, '').trim();
+                console.log("Further Cleaned Text:", cleanedText);
+    
+                return JSON.parse(cleanedText);
+            }
         } catch (error) {
             console.error("Error analyzing text:", error.message);
             return null;
         }
-    }
+    }   
 
     // Check content and use the appropriate prompt
     if (fileText.includes('Claimant Information:')) {
@@ -239,7 +273,7 @@ app.post('/analyze-image', upload.single('image'), async (req, res) => {
                         }
                     },
                     {
-                        "text": "Analyze the Image and tell me what object does the image contains. You must return in form of - object identified"
+                        "text": "Analyze the Image and tell me what object does the image contains. You must return in form of - object name"
                     }
                 ]
             }
